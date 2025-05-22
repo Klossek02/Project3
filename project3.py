@@ -3,112 +3,118 @@ from matplotlib_venn import venn3
 import matplotlib.pyplot as plt
 import csv
 import os
+import warnings
+warnings.filterwarnings("ignore")
 
-vcf_files = {'Delly': 'project3/delly.vcf', 'BreakDancer': 'project3/breakdancer.vcf', 'Pindel': 'project3/pindel.vcf'}
+# input SV files 
+vcf_files = {
+    'Delly': 'project3/delly.vcf',
+    'BreakDancer': 'project3/breakdancer.vcf',
+    'Pindel': 'project3/pindel.vcf'
+}
 
-TOLERANCE = 200    # position tolerance (bp) -- can be adjusted 
-MIN_SV_LENGTH = 50 # minimal SV length for comparison 
+TOLERANCE = 200
+MIN_SV_LENGTH = 50
 
-os.makedirs("project3/sv_results", exist_ok = True)
+os.makedirs("project3/sv_results", exist_ok=True)
 
 def get_sv_intervals(vcf_path):
-
-    sv_list = []
-    lengths = []
-
-    with vcfpy.Reader.from_path(vcf_path) as reader:
-        for record in reader:
-            chrom = record.CHROM
-            svtype = record.INFO.get('SVTYPE', 'NA')
-            start = int(record.POS)
-            end = int(record.INFO.get('END', start))
+    sv_list, lengths = [], []
+    with vcfpy.Reader.from_path(vcf_path) as r:
+        for rec in r:
+            chrom = rec.CHROM
+            svtype = rec.INFO.get('SVTYPE', 'NA')
+            start = int(rec.POS)
+            end   = int(rec.INFO.get('END', start))
             length = abs(end - start)
             if length >= MIN_SV_LENGTH:
                 sv_list.append((chrom, svtype, start, end))
                 lengths.append(length)
     return sv_list, lengths
 
-# SV lists + their lengths
-sv_dict = {}
-length_dict = {}
-for tool, path in vcf_files.items():
-    sv_list, lengths = get_sv_intervals(path)
-    sv_dict[tool] = sv_list
-    length_dict[tool] = lengths
+# === UNIT TESTS ===
+def test_get_sv_intervals():
+    print("\n== TEST get_sv_intervals() ==")
+    test_cases = {
+        "project3/test_basic.vcf":        (3, [100,200,300]),
+        "project3/test_min_length.vcf":   (2, [120,300]),      
+        "project3/test_missing_svtype.vcf":(3, [50,100,150]),   
+        "project3/test_multiple_chrom.vcf":(4, [70,250,50,100])
+    }
+    for path, (exp_n, exp_lens) in test_cases.items():
+        sv_list, lengths = get_sv_intervals(path)
+        assert len(sv_list) == exp_n, f"{path}: expected {exp_n} SV, is {len(sv_list)}"
+        assert lengths == exp_lens,\
+            f"{path}: expected length {exp_lens}, is {lengths}"
+        print(f"  {os.path.basename(path)} OK")
+    print("test_get_sv_intervals finished successfully!\n")
 
-# fuzzy match (for better tolerance )
-def match_sv(sv, sv_list, tolerance = TOLERANCE):
-    chrom1, svtype1, start1, end1 = sv
-    for chrom2, svtype2, start2, end2 in sv_list:
-        if chrom1 == chrom2 and svtype1 == svtype2:
-            if abs(start1 - start2) <= tolerance and abs(end1 - end2) <= tolerance:
+# === MAIN CODE ===
+if __name__ == "__main__":
+    test_get_sv_intervals()
+
+    # collect SV from all tools
+    sv_dict, length_dict = {}, {}
+    for tool, fn in vcf_files.items():
+        sl, ln = get_sv_intervals(fn)
+        sv_dict[tool]    = sl
+        length_dict[tool]= ln
+
+    # fuzzy‐match
+    def match_sv(sv, lst, tol=TOLERANCE):
+        c1,t1,s1,e1 = sv
+        for c2,t2,s2,e2 in lst:
+            if c1==c2 and t1==t2 and abs(s1-s2)<=tol and abs(e1-e2)<=tol:
                 return True
-    return False
+        return False
 
-# unique and common pairs 
-only_delly = [sv for sv in sv_dict['Delly']
-              if not match_sv(sv, sv_dict['BreakDancer']) and not match_sv(sv, sv_dict['Pindel'])]
+    only = lambda A,B,C: [sv for sv in sv_dict[A]
+                         if not match_sv(sv,sv_dict[B]) and not match_sv(sv,sv_dict[C])]
 
-only_breakdancer = [sv for sv in sv_dict['BreakDancer']
-                    if not match_sv(sv, sv_dict['Delly']) and not match_sv(sv, sv_dict['Pindel'])]
+    only_delly = only('Delly','BreakDancer','Pindel')
+    only_breakdancer = only('BreakDancer','Delly','Pindel')
+    only_pindel = only('Pindel','Delly','BreakDancer')
 
-only_pindel = [sv for sv in sv_dict['Pindel']
-               if not match_sv(sv, sv_dict['Delly']) and not match_sv(sv, sv_dict['BreakDancer'])]
+    DB = [sv for sv in sv_dict['Delly'] if match_sv(sv,sv_dict['BreakDancer']) and not match_sv(sv,sv_dict['Pindel'])]
+    DP = [sv for sv in sv_dict['Delly'] if match_sv(sv,sv_dict['Pindel']) and not match_sv(sv,sv_dict['BreakDancer'])]
+    BP = [sv for sv in sv_dict['BreakDancer'] if match_sv(sv,sv_dict['Pindel']) and not match_sv(sv,sv_dict['Delly'])]
+    ALL= [sv for sv in sv_dict['Delly'] if match_sv(sv,sv_dict['BreakDancer']) and match_sv(sv,sv_dict['Pindel'])]
 
-# pairs 
-delly_breakdancer = [sv for sv in sv_dict['Delly'] if match_sv(sv, sv_dict['BreakDancer']) and not match_sv(sv, sv_dict['Pindel'])]
-delly_pindel = [sv for sv in sv_dict['Delly'] if match_sv(sv, sv_dict['Pindel']) and not match_sv(sv, sv_dict['BreakDancer'])]
-breakdancer_pindel = [sv for sv in sv_dict['BreakDancer'] if match_sv(sv, sv_dict['Pindel']) and not match_sv(sv, sv_dict['Delly'])]
+    
+    plt.figure(figsize=(10,6))
+    for t in vcf_files:
+        plt.hist(length_dict[t], bins=40, alpha=0.5, label=t)
+    plt.legend(); plt.xlabel('Length [bp]'); plt.ylabel('Number'); 
+    plt.title('Histogram of SV length'); plt.tight_layout()
+    plt.savefig('project3/sv_results/histogram_sv_lengths.png'); plt.close()
 
-# common for all 
-common_all = [sv for sv in sv_dict['Delly'] if match_sv(sv, sv_dict['BreakDancer']) and match_sv(sv, sv_dict['Pindel'])]
-
-
-plt.figure(figsize=(10,6))
-for tool in vcf_files:
-    plt.hist(length_dict[tool], bins=40, alpha=0.5, label=tool)
-plt.xlabel('SV length [bp]')
-plt.ylabel('No. of variants')
-plt.title('Histogram of SV length for each tool')
-plt.legend()
-plt.tight_layout()
-plt.savefig('project3/sv_results/histogram_sv_lengths.png')
-plt.show()
-
-# Venn diagram
-venn3([
-    set([str(sv) for sv in sv_dict['Delly']]),
-    set([str(sv) for sv in sv_dict['BreakDancer']]),
-    set([str(sv) for sv in sv_dict['Pindel']])
-    ],
-    set_labels=('Delly', 'BreakDancer', 'Pindel'))
-plt.title('SV comparision')
-plt.tight_layout()
-plt.savefig('project3/sv_results/sv_venn_fuzzy.png')
-plt.show()
+    venn3([
+        set(map(str, sv_dict['Delly'])),
+        set(map(str, sv_dict['BreakDancer'])),
+        set(map(str, sv_dict['Pindel']))
+    ], set_labels=('Delly','BreakDancer','Pindel'))
+    plt.title('SV comparison'); plt.tight_layout()
+    plt.savefig('project3/sv_results/sv_venn_fuzzy.png'); plt.close()
 
 
-def write_sv_to_csv(sv_list, filename):
-    with open(filename, 'w', newline='') as f:
-        w = csv.writer(f)
-        w.writerow(['Chr', 'Typ', 'Start', 'End'])
-        for sv in sv_list:
-            w.writerow(sv)
+    def to_csv(lst, fn):
+        with open(fn,'w',newline='') as f:
+            w=csv.writer(f); w.writerow(['Chr','Typ','Start','End'])
+            w.writerows(lst)
+    to_csv(only_delly, 'project3/sv_results/only_delly.csv')
+    to_csv(only_breakdancer, 'project3/sv_results/only_breakdancer.csv')
+    to_csv(only_pindel, 'project3/sv_results/only_pindel.csv')
+    to_csv(DB,'project3/sv_results/delly_breakdancer.csv')
+    to_csv(DP, 'project3/sv_results/delly_pindel.csv')
+    to_csv(BP, 'project3/sv_results/breakdancer_pindel.csv')
+    to_csv(ALL, 'project3/sv_results/common_all.csv')
 
-write_sv_to_csv(only_delly, 'project3/sv_results/only_delly.csv')
-write_sv_to_csv(only_breakdancer, 'project3/sv_results/only_breakdancer.csv')
-write_sv_to_csv(only_pindel, 'project3/sv_results/only_pindel.csv')
-write_sv_to_csv(delly_breakdancer, 'project3/sv_results/delly_breakdancer.csv')
-write_sv_to_csv(delly_pindel, 'project3/sv_results/delly_pindel.csv')
-write_sv_to_csv(breakdancer_pindel, 'project3/sv_results/breakdancer_pindel.csv')
-write_sv_to_csv(common_all, 'project3/sv_results/common_all.csv')
-
-print("\ SV SUMMARY ")
-print(f"SV no. only in Delly: {len(only_delly)}")
-print(f"SV no. only in BreakDancer: {len(only_breakdancer)}")
-print(f"SV no. only in Pindel: {len(only_pindel)}")
-print(f"SV common no. for Delly and BreakDancer: {len(delly_breakdancer)}")
-print(f"SV common no. for Delly and Pindel: {len(delly_pindel)}")
-print(f"SV common no. for BreakDancer and Pindel: {len(breakdancer_pindel)}")
-print(f"SV common no. for all 3 tools: {len(common_all)}")
-
+    print("\n==== SV SUMMARY ====")
+    print(f"only Delly: {len(only_delly)}")
+    print(f"only BreakDancer: {len(only_breakdancer)}")
+    print(f"only Pindel: {len(only_pindel)}")
+    print(f"Delly∩BD: {len(DB)}")
+    print(f"Delly∩Pindel: {len(DP)}")
+    print(f"BD∩Pindel: {len(BP)}")
+    print(f"all three: {len(ALL)}")
+    print("Wyniki w project3/sv_results/")
