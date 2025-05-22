@@ -1,0 +1,9 @@
+##fileformat=VCFv4.2
+##source=test_basic
+##contig=<ID=chr1>
+##INFO=<ID=SVTYPE,Number=1,Type=String,Description="Type of structural variant">
+##INFO=<ID=END,Number=1,Type=Integer,Description="End position of the variant">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO
+chr1	100	.	N	<DEL>	60	PASS	SVTYPE=DEL;END=200
+chr1	300	.	N	<DUP>	60	PASS	SVTYPE=DUP;END=500
+chr1	1000	.	N	<INV>	60	PASS	SVTYPE=INV;END=1300

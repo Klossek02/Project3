@@ -1,0 +1,8 @@
+##fileformat=VCFv4.2
+##source=test_missing_svtype
+##contig=<ID=chr1>
+##INFO=<ID=END,Number=1,Type=Integer,Description="End position of the variant">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO
+chr1	100	.	N	<DEL>	.	PASS	END=150   
+chr1	200	.	N	<DUP>	.	PASS	END=300
+chr1	300	.	N	<INV>	.	PASS	END=450
