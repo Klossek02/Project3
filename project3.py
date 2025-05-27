@@ -6,9 +6,12 @@ from collections import defaultdict
 from matplotlib_venn import venn3
 import matplotlib.pyplot as plt
 import warnings
+
+from plots import plot_len_by_type, plot_jaccard_heat, plot_svtype_bar, plot_upset
+
 warnings.filterwarnings("ignore")
 
-ROOT = os.path.expanduser("~/project3")
+ROOT = os.path.expanduser("~/Project3")
 BAM_IN = os.path.join(ROOT, "SRR_final_sorted.bam")
 VCF_OUT = os.path.join(ROOT, "vcf_output.vcf")
 RESULT_DIR = os.path.join(ROOT, "sv_results")
@@ -126,15 +129,19 @@ def write_sv_to_vcf(sv_calls, vcf_path):
         '##fileformat=VCFv4.2',
         '##INFO=<ID=SVTYPE,Number=1,Type=String,Description="Type of structural variant">',
         '##INFO=<ID=END,Number=1,Type=Integer,Description="End position of the variant">',
+        '##INFO=<ID=SVLEN,Number=1,Type=Integer,Description="Length of structural variant">',
         '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO'
     ]
+
     with open(vcf_path, 'w') as f:
         for h in header_lines:
             f.write(h + '\n')
-        for chrom, svtype, start, end in sorted(sv_calls, key=lambda x: (x[0], x[2])):
-            alt  = f"<{svtype}>"
-            info = f"SVTYPE={svtype};END={end}"
-            f.write(f"{chrom}\t{start}\t.\tN\t{alt}\t.\tPASS\t{info}\n")
+        for idx, (chrom, svtype, start, end) in enumerate(sorted(sv_calls, key=lambda x: (x[0], x[2]))):
+            alt = f"<{svtype}>"
+            svlen = end - start + 1
+            info = f"SVTYPE={svtype};END={end};SVLEN={svlen}"
+            id_ = f"SV{idx:05d}"  # e.g., SV00001
+            f.write(f"{chrom}\t{start}\t{id_}\tN\t{alt}\t.\tPASS\t{info}\n")
 
 # ——— READ BACK VCF INTO INTERVALS ———
 def get_sv_intervals(vcf_path):
@@ -163,7 +170,7 @@ def test_get_sv_intervals():
     print("test_get_sv_intervals finished successfully!\n")
 
 # ——— COMPARE & PLOT ———
-def compare_and_plot(output_vcf, other_vcfs):
+def compare_and_plot(output_vcf, other_vcfs, result_dir=RESULT_DIR):
     write_sv_to_vcf(call_sv_from_bam(BAM_IN), output_vcf)
 
     # loading every set
@@ -172,6 +179,27 @@ def compare_and_plot(output_vcf, other_vcfs):
         sl, ln = get_sv_intervals(path)
         all_sv[name]   = sl
         all_len[name]  = ln
+
+    overlap_cnt, out_cnt, overlap = overlap_score(
+        all_sv['Output'],
+        all_sv['Delly'],
+        all_sv['BreakDancer'],
+        all_sv['Pindel'],
+        TOLERANCE
+    )
+    print(f"\n=== OVERLAP METRIC ===")
+    print(f"Output variants:          {out_cnt}")
+    print(f"Overlapping with others:  {overlap_cnt}")
+    print(f"OVERLAP score:            {overlap:.3f}\n")
+
+    plot_len_by_type(all_sv, result_dir)
+    plot_jaccard_heat(all_sv, TOLERANCE, result_dir)
+    plot_svtype_bar(all_sv, result_dir)
+
+    try:
+        plot_upset(all_sv, TOLERANCE, result_dir)
+    except ImportError:
+        print("matplotlib-upset not installed – skipping UpSet plot")
 
     # fuzzy match helper
     def match(sv, lst):
@@ -201,7 +229,7 @@ def compare_and_plot(output_vcf, other_vcfs):
     for tool, lens in all_len.items():
         plt.hist(lens, bins=30, alpha=0.5, label=tool)
     plt.legend(); plt.title("SV length comparison")
-    plt.savefig(f"{RESULT_DIR}/histogram.png"); plt.close()
+    plt.savefig(f"{result_dir}/histogram.png"); plt.close()
 
     # Venn (Output / Delly / Pindel)
     venn3([
@@ -210,7 +238,7 @@ def compare_and_plot(output_vcf, other_vcfs):
         set(map(str, all_sv['BreakDancer']))
     ], set_labels=('Output','Delly','BreakDancer'))
     plt.title("SV overlap")
-    plt.savefig(f"{RESULT_DIR}/venn.png"); plt.close()
+    plt.savefig(f"{result_dir}/venn.png"); plt.close()
 
     def to_csv(lst, fn):
         with open(fn,'w',newline='') as f:
@@ -232,7 +260,7 @@ def compare_and_plot(output_vcf, other_vcfs):
         "common_all.csv": ALL
     }
     for fn, lst in mapping.items():
-        to_csv(lst, os.path.join(RESULT_DIR, fn))
+        to_csv(lst, os.path.join(result_dir, fn))
 
     print("--- SV SUMMARY ---")
     print(f"Only output: {len(only_output)}")
@@ -246,8 +274,58 @@ def compare_and_plot(output_vcf, other_vcfs):
     print(f"Delly ∩ Pindel: {len(DP)}")
     print(f"BD ∩ Pindel: {len(BP)}")
     print(f"All three: {len(ALL)}")
-    print(f"Results in {RESULT_DIR}/")
+    print(f"Results in {result_dir}/")
+
+def overlap_score(output_set, delly_set, bd_set, pindel_set, tol):
+    union_ref = delly_set + bd_set + pindel_set
+
+    inter = [
+        sv for sv in output_set
+        if any(
+            # korzystamy z tego samego 'match'
+            (sv[0] == r[0] and                             # chrom
+             sv[1] == r[1] and                             # typ
+             abs(sv[2]-r[2]) <= tol and abs(sv[3]-r[3]) <= tol)
+            for r in union_ref
+        )
+    ]
+    overlap_cnt = len(inter)
+    output_cnt  = len(output_set) or 1    # uniknij /0
+    score       = overlap_cnt / output_cnt
+    return overlap_cnt, output_cnt, score
+
+def fake_read(rname, pos, is_rev, mrname, mpos, mate_rev):
+    header = pysam.AlignmentHeader.from_dict({
+        "SQ": [{"SN": "chr1", "LN": 1_000_000},
+               {"SN": "chr2", "LN": 1_000_000}]
+    })
+
+    a = pysam.AlignedSegment(header)
+    a.reference_id        = 0 if rname == "chr1" else 1
+    a.reference_start     = pos
+    a.cigarstring         = "100M"
+    a.is_reverse          = is_rev
+    a.next_reference_id   = 0 if mrname == "chr1" else 1
+    a.next_reference_start= mpos
+    a.mate_is_reverse     = mate_rev
+    a.mapping_quality     = 60
+    return a
+
+
+def run_with_params(tol, min_sup, min_sv_len):
+    global TOLERANCE, MIN_SUPPORT, MIN_SV_LENGTH
+    TOLERANCE      = tol
+    MIN_SUPPORT    = min_sup
+    MIN_SV_LENGTH  = min_sv_len
+    compare_and_plot(VCF_OUT, OTHER_VCFS)
 
 if __name__ == "__main__":
     test_get_sv_intervals()
     compare_and_plot(VCF_OUT, OTHER_VCFS)
+    # for tol in [200, 500, 1000]:
+    #     for sup in [2, 3, 4]:
+    #         for svl in [50, 100]:
+    #             print(f"\n### Testing T={tol}, SUP={sup}, MINLEN={svl}")
+    #             run_with_params(tol, sup, svl)
+    # Best for SUP=3, MINLEN=50, TOLERANCE=1000 - OVERLAP = 0.044
+    # But SUP=4, MINLEN=100, TOLERANCE=500–1000 with 20% overlap is also good
