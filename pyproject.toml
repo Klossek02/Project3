@@ -1,0 +1,17 @@
+[project]
+name = "project3"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.11"
+dependencies = [
+    "matplotlib>=3.10.3",
+    "matplotlib-venn>=1.1.2",
+    "pandas>=2.2.3",
+    "pysam>=0.23.0",
+    "pytest>=8.3.5",
+    "upsetplot>=0.9.0",
+    "vcfpy>=0.13.8",
+]
+
+[tool.ruff]
+line-length = 999

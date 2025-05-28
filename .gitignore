@@ -1,0 +1,5 @@
+__pycache__/
+data/GRCh38_full_analysis_set_plus_decoy_hla*
+data/SRR*
+results/
+uv.lock
