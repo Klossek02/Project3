@@ -3,12 +3,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from collections import defaultdict
-
-try:
-    from upsetplot import UpSet, from_contents
-except ImportError:
-    UpSet = None
-    from_contents = None
+from upsetplot import UpSet, from_contents
 
 def plot_len_by_type(all_sv, out_dir):
     for tool, svs in all_sv.items():
@@ -20,7 +15,8 @@ def plot_len_by_type(all_sv, out_dir):
         for svtype, lens in lengths_by_type.items():
             plt.hist(lens, bins=30, alpha=0.5, label=svtype)
         plt.title(f"SV length distribution – {tool}")
-        plt.xlabel("length [bp]"); plt.ylabel("#SV")
+        plt.xlabel("length [bp]")
+        plt.ylabel("#SV")
         plt.legend()
         plt.tight_layout()
         plt.savefig(os.path.join(out_dir, f"hist_by_type_{tool}.png"))
@@ -28,8 +24,10 @@ def plot_len_by_type(all_sv, out_dir):
 
 def jaccard(a, b, tol):
     def key(t):
-        c, t, s, e = t ; return f"{c}:{t}:{round(s/tol)}:{round(e/tol)}"
-    sa = set(map(key, a)); sb = set(map(key, b))
+        c, t, s, e = t 
+        return f"{c}:{t}:{round(s/tol)}:{round(e/tol)}"
+    sa = set(map(key, a))
+    sb = set(map(key, b))
     return len(sa & sb) / len(sa | sb) if sa or sb else 0.0
 
 def plot_jaccard_heat(all_sv, tol, out_dir):

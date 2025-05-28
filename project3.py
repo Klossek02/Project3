@@ -6,6 +6,7 @@ from collections import defaultdict
 from matplotlib_venn import venn3
 import matplotlib.pyplot as plt
 import warnings
+import pandas as pd
 
 from plots import plot_len_by_type, plot_jaccard_heat, plot_svtype_bar, plot_upset
 
@@ -13,10 +14,10 @@ from plots import plot_len_by_type, plot_jaccard_heat, plot_svtype_bar, plot_ups
 
 warnings.filterwarnings("ignore")
 
-ROOT = os.path.expanduser("~/Project3")
-BAM_IN = os.path.join(ROOT, "SRR_final_sorted.bam")
+ROOT = os.path.expanduser(".")
+BAM_IN = os.path.join(ROOT, "data/SRR_final_sorted.bam")
 VCF_OUT = os.path.join(ROOT, "vcf_output.vcf")
-RESULT_DIR = os.path.join(ROOT, "sv_results")
+RESULT_DIR = os.path.join(ROOT, "results")
 
 OTHER_VCFS = {
     "Delly": os.path.join(ROOT, "delly.vcf"),
@@ -24,14 +25,13 @@ OTHER_VCFS = {
     "Pindel": os.path.join(ROOT, "pindel.vcf")
 }
 
-TEST_DIR = os.path.join(ROOT, "tests")
+TEST_DIR = os.path.join(ROOT, "data")
 TEST_VCFS = {
     "test_basic.vcf": (3, [100, 200, 300]),
     "test_min_length.vcf": (2, [120, 300]),
     "test_missing_svtype.vcf": (3, [50, 100, 150]),
     "test_multiple_chrom.vcf": (4, [70, 250, 50, 100])}
 
-RESULT_DIR  = "project3/sv_results"
 MIN_MAPQ = 30
 MIN_SUPPORT = 3
 CLUSTER_WINDOW = 500
@@ -177,10 +177,21 @@ def compare_and_plot(output_vcf, other_vcfs, result_dir=RESULT_DIR):
         all_sv['Pindel'],
         TOLERANCE)
 
-    print(f"\n=== OVERLAP METRIC ===")
+    print("\n=== OVERLAP METRIC ===")
     print(f"Output variants: {out_cnt}")
     print(f"Overlapping with others: {overlap_cnt}")
     print(f"OVERLAP score: {overlap:.3f}\n")
+
+    overlap_df = pd.DataFrame({
+        'overlap_count': [overlap_cnt],
+        'output_count': [out_cnt],
+        'overlap_score': [overlap]
+    })
+    
+    # Save to CSV
+    overlap_df.to_csv(f"{result_dir}/overlap_scores.csv", index=False)
+
+
 
     plot_len_by_type(all_sv, result_dir)
     plot_jaccard_heat(all_sv, TOLERANCE, result_dir)
@@ -218,8 +229,10 @@ def compare_and_plot(output_vcf, other_vcfs, result_dir=RESULT_DIR):
     plt.figure(figsize=(8,5))
     for tool, lens in all_len.items():
         plt.hist(lens, bins=30, alpha=0.5, label=tool)
-    plt.legend(); plt.title("SV length comparison")
-    plt.savefig(f"{result_dir}/histogram.png"); plt.close()
+    plt.legend()
+    plt.title("SV length comparison")
+    plt.savefig(f"{result_dir}/histogram.png")
+    plt.close()
 
     # Venn (Output / Delly / Pindel)
     venn3([
@@ -228,7 +241,8 @@ def compare_and_plot(output_vcf, other_vcfs, result_dir=RESULT_DIR):
         set(map(str, all_sv['BreakDancer']))
     ], set_labels=('Output','Delly','BreakDancer'))
     plt.title("SV overlap")
-    plt.savefig(f"{result_dir}/venn.png"); plt.close()
+    plt.savefig(f"{result_dir}/venn.png")
+    plt.close()
 
     def to_csv(lst, fn):
         with open(fn,'w',newline='') as f:
@@ -307,16 +321,23 @@ def run_with_params(tol, min_sup, min_sv_len):
     TOLERANCE = tol
     MIN_SUPPORT = min_sup
     MIN_SV_LENGTH = min_sv_len
-    compare_and_plot(VCF_OUT, OTHER_VCFS)
+    
+    compare_and_plot_with_parametrized_dir(VCF_OUT, OTHER_VCFS)
+
+def compare_and_plot_with_parametrized_dir(output_vcf, other_vcfs):
+    dir = f"{RESULT_DIR}/tol={TOLERANCE},min_sup={MIN_SUPPORT},min_sv_len={MIN_SV_LENGTH}"
+    os.makedirs(dir, exist_ok=True)
+    compare_and_plot(f"{dir}/{output_vcf}", other_vcfs, result_dir=dir)
+
 
 
 if __name__ == "__main__":
     test_get_sv_intervals()
-    compare_and_plot(VCF_OUT, OTHER_VCFS)
     for tol in [200, 500, 1000]:
         for sup in [2, 3, 4]:
             for svl in [50, 100]:
                 print(f"\n### Testing T = {tol}, SUP = {sup}, MIN_LEN = {svl}")
                 run_with_params(tol, sup, svl)
+
     # Best for SUP=3, MINLEN=50, TOLERANCE=1000 - OVERLAP = 0.044
     # But SUP=4, MINLEN=100, TOLERANCE=500–1000 with 20% overlap is also good
