@@ -9,6 +9,8 @@ import warnings
 
 from plots import plot_len_by_type, plot_jaccard_heat, plot_svtype_bar, plot_upset
 
+# ——— GLOBAL SETTINGS ——————————————————————————————
+
 warnings.filterwarnings("ignore")
 
 ROOT = os.path.expanduser("~/Project3")
@@ -24,17 +26,17 @@ OTHER_VCFS = {
 
 TEST_DIR = os.path.join(ROOT, "tests")
 TEST_VCFS = {
-    "test_basic.vcf":            (3, [100, 200, 300]),
-    "test_min_length.vcf":       (2, [120, 300]),
-    "test_missing_svtype.vcf":   (3, [50, 100, 150]),
-    "test_multiple_chrom.vcf":   (4, [70, 250, 50, 100])}
+    "test_basic.vcf": (3, [100, 200, 300]),
+    "test_min_length.vcf": (2, [120, 300]),
+    "test_missing_svtype.vcf": (3, [50, 100, 150]),
+    "test_multiple_chrom.vcf": (4, [70, 250, 50, 100])}
 
 RESULT_DIR  = "project3/sv_results"
-MIN_MAPQ       = 30
-MIN_SUPPORT    = 3
+MIN_MAPQ = 30
+MIN_SUPPORT = 3
 CLUSTER_WINDOW = 500
-MIN_SV_LENGTH  = 50
-TOLERANCE      = 1000
+MIN_SV_LENGTH = 50
+TOLERANCE = 1000
 
 os.makedirs(RESULT_DIR, exist_ok=True)
 
@@ -46,12 +48,7 @@ def call_sv_from_bam(bam_path):
         if read.mapping_quality < MIN_MAPQ:
             continue
         if (not read.is_proper_pair) and (not read.is_unmapped) and (not read.mate_is_unmapped):
-            key = (
-                read.reference_name,
-                read.next_reference_name,
-                read.is_reverse,
-                read.mate_is_reverse
-            )
+            key = (read.reference_name, read.next_reference_name, read.is_reverse, read.mate_is_reverse)
             disc[key].append(read)
     bam.close()
 
@@ -70,16 +67,6 @@ def call_sv_from_bam(bam_path):
             sv_calls.append(_cluster_to_sv(cluster))
     return sv_calls
 
-"""
-def _cluster_to_sv(reads):
-    chrom = reads[0].reference_name
-    starts = [r.reference_start for r in reads]
-    ends = [r.reference_end   for r in reads]
-    start = min(starts) + 1
-    end = max(ends)
-    svtype = "DEL"   # simple deletion
-    return (chrom, svtype, start, end)
-"""
 
 def _cluster_to_sv(reads):
     """
@@ -95,9 +82,9 @@ def _cluster_to_sv(reads):
     chrom2 = reads[0].next_reference_name
 
     starts = [r.reference_start for r in reads]
-    ends   = [r.reference_end   for r in reads]
-    start  = min(starts) + 1
-    end    = max(ends)
+    ends = [r.reference_end   for r in reads]
+    start = min(starts) + 1
+    end = max(ends)
 
     # classifying by chrom and orientation
     if chrom1 != chrom2:
@@ -140,8 +127,9 @@ def write_sv_to_vcf(sv_calls, vcf_path):
             alt = f"<{svtype}>"
             svlen = end - start + 1
             info = f"SVTYPE={svtype};END={end};SVLEN={svlen}"
-            id_ = f"SV{idx:05d}"  # e.g., SV00001
+            id_ = f"SV{idx:05d}"  # e.g. SV00001 and so on
             f.write(f"{chrom}\t{start}\t{id_}\tN\t{alt}\t.\tPASS\t{info}\n")
+
 
 # ——— READ BACK VCF INTO INTERVALS ———
 def get_sv_intervals(vcf_path):
@@ -158,6 +146,7 @@ def get_sv_intervals(vcf_path):
                 lengths.append(length)
     return sv_list, lengths
 
+
 # ——— UNIT TESTS ———
 def test_get_sv_intervals():
     print("\n== TEST get_sv_intervals() ==")
@@ -169,6 +158,7 @@ def test_get_sv_intervals():
         print(f"  {fname} OK")
     print("test_get_sv_intervals finished successfully!\n")
 
+
 # ——— COMPARE & PLOT ———
 def compare_and_plot(output_vcf, other_vcfs, result_dir=RESULT_DIR):
     write_sv_to_vcf(call_sv_from_bam(BAM_IN), output_vcf)
@@ -177,20 +167,20 @@ def compare_and_plot(output_vcf, other_vcfs, result_dir=RESULT_DIR):
     all_sv, all_len = {}, {}
     for name, path in {**other_vcfs, 'Output': output_vcf}.items():
         sl, ln = get_sv_intervals(path)
-        all_sv[name]   = sl
-        all_len[name]  = ln
+        all_sv[name] = sl
+        all_len[name] = ln
 
     overlap_cnt, out_cnt, overlap = overlap_score(
         all_sv['Output'],
         all_sv['Delly'],
         all_sv['BreakDancer'],
         all_sv['Pindel'],
-        TOLERANCE
-    )
+        TOLERANCE)
+
     print(f"\n=== OVERLAP METRIC ===")
-    print(f"Output variants:          {out_cnt}")
-    print(f"Overlapping with others:  {overlap_cnt}")
-    print(f"OVERLAP score:            {overlap:.3f}\n")
+    print(f"Output variants: {out_cnt}")
+    print(f"Overlapping with others: {overlap_cnt}")
+    print(f"OVERLAP score: {overlap:.3f}\n")
 
     plot_len_by_type(all_sv, result_dir)
     plot_jaccard_heat(all_sv, TOLERANCE, result_dir)
@@ -257,8 +247,8 @@ def compare_and_plot(output_vcf, other_vcfs, result_dir=RESULT_DIR):
         "delly_breakdancer.csv":DB,
         "delly_pindel.csv": DP,
         "breakdancer_pindel.csv":BP,
-        "common_all.csv": ALL
-    }
+        "common_all.csv": ALL}
+
     for fn, lst in mapping.items():
         to_csv(lst, os.path.join(result_dir, fn))
 
@@ -276,56 +266,57 @@ def compare_and_plot(output_vcf, other_vcfs, result_dir=RESULT_DIR):
     print(f"All three: {len(ALL)}")
     print(f"Results in {result_dir}/")
 
+
 def overlap_score(output_set, delly_set, bd_set, pindel_set, tol):
     union_ref = delly_set + bd_set + pindel_set
 
     inter = [
         sv for sv in output_set
         if any(
-            # korzystamy z tego samego 'match'
-            (sv[0] == r[0] and                             # chrom
-             sv[1] == r[1] and                             # typ
+            # we use the same 'match'
+            (sv[0] == r[0] and # chromosome
+             sv[1] == r[1] and # type
              abs(sv[2]-r[2]) <= tol and abs(sv[3]-r[3]) <= tol)
-            for r in union_ref
-        )
-    ]
+            for r in union_ref)]
+
     overlap_cnt = len(inter)
-    output_cnt  = len(output_set) or 1    # uniknij /0
+    output_cnt  = len(output_set) or 1  
     score       = overlap_cnt / output_cnt
     return overlap_cnt, output_cnt, score
+
 
 def fake_read(rname, pos, is_rev, mrname, mpos, mate_rev):
     header = pysam.AlignmentHeader.from_dict({
         "SQ": [{"SN": "chr1", "LN": 1_000_000},
-               {"SN": "chr2", "LN": 1_000_000}]
-    })
+               {"SN": "chr2", "LN": 1_000_000}]})
 
     a = pysam.AlignedSegment(header)
-    a.reference_id        = 0 if rname == "chr1" else 1
-    a.reference_start     = pos
-    a.cigarstring         = "100M"
-    a.is_reverse          = is_rev
-    a.next_reference_id   = 0 if mrname == "chr1" else 1
+    a.reference_id = 0 if rname == "chr1" else 1
+    a.reference_start = pos
+    a.cigarstring = "100M"
+    a.is_reverse = is_rev
+    a.next_reference_id = 0 if mrname == "chr1" else 1
     a.next_reference_start= mpos
-    a.mate_is_reverse     = mate_rev
-    a.mapping_quality     = 60
+    a.mate_is_reverse = mate_rev
+    a.mapping_quality = 60
     return a
 
 
 def run_with_params(tol, min_sup, min_sv_len):
     global TOLERANCE, MIN_SUPPORT, MIN_SV_LENGTH
-    TOLERANCE      = tol
-    MIN_SUPPORT    = min_sup
-    MIN_SV_LENGTH  = min_sv_len
+    TOLERANCE = tol
+    MIN_SUPPORT = min_sup
+    MIN_SV_LENGTH = min_sv_len
     compare_and_plot(VCF_OUT, OTHER_VCFS)
+
 
 if __name__ == "__main__":
     test_get_sv_intervals()
     compare_and_plot(VCF_OUT, OTHER_VCFS)
-    # for tol in [200, 500, 1000]:
-    #     for sup in [2, 3, 4]:
-    #         for svl in [50, 100]:
-    #             print(f"\n### Testing T={tol}, SUP={sup}, MINLEN={svl}")
-    #             run_with_params(tol, sup, svl)
+    for tol in [200, 500, 1000]:
+        for sup in [2, 3, 4]:
+            for svl in [50, 100]:
+                print(f"\n### Testing T = {tol}, SUP = {sup}, MIN_LEN = {svl}")
+                run_with_params(tol, sup, svl)
     # Best for SUP=3, MINLEN=50, TOLERANCE=1000 - OVERLAP = 0.044
     # But SUP=4, MINLEN=100, TOLERANCE=500–1000 with 20% overlap is also good
