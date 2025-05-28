@@ -31,9 +31,7 @@ def test_compare_creates_outputs(tmp_path):
     pindel = tmp_path / "pindel_stub.vcf"
 
     for f in [delly, bd, pindel]:
-        f.write_text(
-            """##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n"""
-        )
+        f.write_text("""##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n""")
 
     output_vcf = tmp_path / "output.vcf"
     result_dir = tmp_path / "sv_results"
